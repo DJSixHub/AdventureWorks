@@ -1,0 +1,694 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage[a4paper,margin=2.1cm,headheight=14pt]{geometry}
+\usepackage{booktabs,longtable,array,amsmath,enumitem,xcolor,hyperref,tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!55!black,
+  pdftitle={Especificación de Inteligencia de Negocios - AdventureWorks},
+  pdfauthor={AdventureWorks}
+}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{AdventureWorks | Inteligencia de Negocios}
+\rhead{Decisiones D2 y D7}
+\cfoot{\thepage}
+\setlist{nosep,leftmargin=1.5em}
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{3pt}
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\definecolor{navy}{RGB}{25,54,93}
+\definecolor{pale}{RGB}{231,239,248}
+\definecolor{barone}{RGB}{72,126,180}
+\definecolor{bartwo}{RGB}{104,160,119}
+\definecolor{barthree}{RGB}{227,166,73}
+\tikzset{
+  box/.style={draw=navy,rounded corners,fill=pale,align=center,
+    text width=2.45cm,minimum height=0.8cm,font=\small},
+  reqboxa/.style={draw=navy,rounded corners,fill=pale,align=center,
+    text width=2.7cm,minimum height=1.35cm,font=\small},
+  reqboxb/.style={draw=navy,rounded corners,fill=pale,align=center,
+    text width=3.0cm,minimum height=1.35cm,font=\small},
+  reqboxc/.style={draw=navy,rounded corners,fill=pale,align=center,
+    text width=4.2cm,minimum height=1.35cm,font=\small},
+  flow/.style={-{Stealth[length=2mm]},thick,draw=navy}
+}
+
+\begin{document}
+\hypersetup{pageanchor=false}
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Large\textsc{AdventureWorks Cycles}\par}
+\vspace{1.2cm}
+{\huge\bfseries Especificación de Inteligencia de Negocios\par}
+\vspace{0.6cm}
+{\LARGE Decisiones D2 y D7\par}
+\vspace{1.2cm}
+{\large Requerimientos informacionales y diseño del subconjunto del Data Warehouse\par}
+\vfill
+\end{titlepage}
+\hypersetup{pageanchor=true}
+
+\section{Objetivo y alcance}
+
+Esta especificación define la información necesaria para analizar dos
+decisiones de AdventureWorks: lanzar una oferta especial para un producto
+(D2) e incrementar las existencias de una materia prima (D7). Ambas se
+relacionan con el objetivo de aumentar los márgenes de ganancia mediante el
+crecimiento de ingresos y la gestión de costos.
+
+El documento organiza los requerimientos del negocio, las fuentes y sus
+modelos, la arquitectura informacional, las visualizaciones y las reglas de
+transformación y carga. Las definiciones se apoyan en las tablas operacionales
+de AdventureWorks y los ejemplos utilizan registros de sus archivos de datos.
+La implementación aplica estas estructuras y reglas a la versión de las
+fuentes configurada para el entorno.
+
+\section{Requerimientos de negocio}
+
+\textbf{Resumen.} Las decisiones D2 y D7 conectan el objetivo de aumentar los
+márgenes de ganancia con el crecimiento de ingresos y la gestión de costos.
+Los indicadores y dimensiones propuestos describen los datos que permiten
+analizar cada decisión.
+
+\textbf{Relación entre objetivo, decisiones e información.}
+\begin{center}
+\begin{tikzpicture}[node distance=0.65cm]
+  \node[reqboxa] (goal) {Objetivo\\Aumentar los márgenes de ganancia};
+  \node[reqboxb,right=of goal] (decisions)
+    {Decisiones\\D2: oferta especial\\D7: existencias de materia prima};
+  \node[reqboxc,right=of decisions] (information)
+    {Información requerida\\Ventas, descuentos, costos y recompra\\
+     Inventario, umbrales, compras y proveedores};
+  \draw[flow] (goal) -- (decisions);
+  \draw[flow] (decisions) -- (information);
+\end{tikzpicture}
+\end{center}
+
+\subsection*{D2 — Lanzar una oferta especial para un producto}
+
+\textbf{Descripción y propósito.} Determinar si el descuento temporal en un
+producto produce suficiente volumen e ingreso neto para justificar la
+reducción del precio. La oferta puede también atraer compradores que regresen
+posteriormente a precio regular. La evaluación integra unidades e ingreso neto para contrastar la respuesta
+comercial con el descuento aplicado.
+
+\textbf{Justificación de selección.} La decisión conecta directamente la
+política promocional con unidades, ingreso neto, margen bruto y recompra.
+
+\textbf{Preguntas de negocio}
+\begin{enumerate}
+  \item ¿Qué productos y ofertas generan más unidades e ingreso neto durante
+  su vigencia y qué margen bruto estimado obtienen?
+  \item ¿Qué descuento efectivo se aplicó y cómo se comparan las ventas por
+  día con un período base comparable?
+  \item ¿Cómo varían los resultados por territorio, canal de venta y tipo de
+  cliente?
+  \item ¿Qué proporción de clientes que compró con descuento realizó después
+  otra compra a precio regular?
+\end{enumerate}
+
+\textbf{Indicadores.} En las fórmulas, \(Q\) es cantidad, \(P\) precio unitario,
+\(d\) descuento efectivo, \(L\) total neto de línea, \(C_{std}\) costo estándar
+y \(D\) número de días.
+\texttt{LineTotal} es el neto transaccional. El margen bruto estimado utiliza
+el costo estándar válido en la fecha del pedido y compara importes convertidos
+a USD mediante la tasa asociada al pedido.
+
+\small
+\begin{longtable}{p{0.15\textwidth}p{0.24\textwidth}p{0.23\textwidth}p{0.11\textwidth}p{0.16\textwidth}}
+\toprule
+\textbf{KPI} & \textbf{Definición y propósito} & \textbf{Fórmula} &
+\textbf{Unidad} & \textbf{Fuente / pregunta}\\
+\midrule
+\endhead
+Unidades con oferta & Volumen vendido en líneas con descuento aplicado;
+dimensiona la respuesta observada. & \(\sum Q\), \(d>0\) & unidades &
+SalesOrderDetail (SOD); P1, P2\\
+Venta neta con oferta & Ingreso neto asociado a esas líneas. & \(\sum L\),
+por moneda & moneda & SOD; P1\\
+Margen bruto estimado & Contrasta ingreso neto y costo estándar vigente para
+analizar el aporte comercial. & \(\frac{\sum (L_{USD}-Q\cdot C_{std})}
+{\sum L_{USD}}\), líneas con costo y tasa asociados & porcentaje &
+SOD, ProductCostHistory, CurrencyRate; P1, P2\\
+Descuento efectivo ponderado & Reducción media del precio antes del
+descuento, ponderada por unidades. & \(\frac{\sum QPd}{\sum QP}\) &
+porcentaje & SOD; P2\\
+Variación de unidades por día & Compara el volumen de oferta y base ajustando
+por duración. & \(\frac{Q_{oferta}/D_{oferta}}
+{Q_{base}/D_{base}}-1\) & porcentaje & SOD, SalesOrderHeader (SOH); P2\\
+Recompra regular observada & Clientes que vuelven después de una línea con
+descuento y compran sin descuento. & \(\frac{clientes\ con\ recompra}
+{clientes\ con\ oferta}\) & porcentaje & SOH, SOD, Customer; P4\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+La comparación de períodos utiliza el mismo producto, moneda, canal y duración
+para facilitar la lectura de las ventas observadas antes, durante y después
+de la oferta.
+
+\textbf{Parámetros.} Fecha y ventana base para delimitar la vigencia y comparar
+tasas diarias; producto/categoría y oferta para seleccionar la decisión;
+territorio y canal para identificar diferencias de mercado; tipo de cliente
+(persona o revendedor) para separar segmentos; moneda para evitar agregaciones
+incompatibles. Cada filtro permite acotar las comparaciones de P1--P4.
+
+\subsection*{D7 — Incrementar la cantidad almacenada de una materia prima}
+
+\textbf{Descripción y propósito.} Evaluar el incremento de inventario de un
+material como medida de cobertura ante cambios de precio o suministro. El
+análisis integra las existencias, los umbrales de planificación y el historial
+de precios y recepciones de compra. El punto de reorden y el stock de seguridad
+de Product se aplican al total de existencias del producto; la distribución
+por ubicación aporta contexto operativo.
+
+\textbf{Justificación de selección.} La decisión relaciona capital de
+inventario, necesidades de abastecimiento y condiciones de compra, vinculando
+las existencias con el objetivo de gestionar costos.
+
+\textbf{Preguntas de negocio}
+\begin{enumerate}
+  \item ¿Qué materiales están por debajo de su punto de reorden o stock de
+  seguridad, considerando su existencia total?
+  \item ¿Cómo se distribuye esa existencia entre las ubicaciones registradas?
+  \item ¿Cómo han variado los precios de compra recientes y qué proveedores
+  concentran las cantidades recibidas?
+  \item ¿Qué cantidades fueron ordenadas, recibidas y rechazadas para los
+  materiales priorizados?
+\end{enumerate}
+
+\textbf{Indicadores.} \(H\) representa la existencia total del producto,
+\(R_p\) su punto de reorden, \(S_p\) su stock de seguridad, \(q_r\) cantidad
+recibida y \(c\) proveedor.
+POD = PurchaseOrderDetail; POH = PurchaseOrderHeader.
+
+\small
+\begin{longtable}{p{0.15\textwidth}p{0.24\textwidth}p{0.23\textwidth}p{0.11\textwidth}p{0.16\textwidth}}
+\toprule
+\textbf{KPI} & \textbf{Definición y propósito} & \textbf{Fórmula} &
+\textbf{Unidad} & \textbf{Fuente / pregunta}\\
+\midrule
+\endhead
+Existencia total & Cantidad registrada para el producto sumando bins y
+ubicaciones. & \(H=\sum Quantity\) & unidades & ProductInventory (PI);
+P1, P2\\
+Brecha al umbral & Cantidad que falta para alcanzar el nivel seleccionado;
+prioriza revisión. & \(\max(0,R_p-H)\) o \(\max(0,S_p-H)\) & unidades &
+Product; P1\\
+Precio recibido ponderado & Precio medio de compra ponderado por unidades
+recibidas en la ventana. & \(\frac{\sum UnitPrice\cdot q_r}{\sum q_r}\) &
+moneda por unidad & POD; P3\\
+Variación del precio recibido & Compara el precio ponderado entre meses
+consecutivos con recepciones. & \(\frac{Precio_{reciente}}{Precio_{base}}-1\) &
+porcentaje & POH; POD; P3\\
+Porcentaje rechazado & Señala la fracción de cantidad recibida que fue
+rechazada. & \(\frac{\sum RejectedQty}{\sum ReceivedQty}\) & porcentaje &
+POD; P4\\
+Participación del proveedor principal & Mide concentración de unidades
+recibidas por material en la ventana. & \(\frac{\max_c(\sum q_{r,c})}
+{\sum_c q_{r,c}}\) & porcentaje & POH, POD, Vendor; P3, P4\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+La brecha frente al umbral orienta la priorización del análisis de inventario
+junto con precios, recepciones y participación de proveedores.
+
+\textbf{Parámetros.} Producto/material para acotar la decisión; fecha/ventana
+de compra para medir precios y recepciones; ubicación para analizar la
+distribución física; proveedor para evaluar concentración; umbral elegido
+(reorden o seguridad) para calcular la brecha.
+
+\subsection*{Visualizaciones propuestas}
+
+\small
+\begin{longtable}{p{0.12\textwidth}p{0.23\textwidth}p{0.22\textwidth}p{0.35\textwidth}}
+\toprule
+\textbf{Vista} & \textbf{Pregunta y KPI} & \textbf{Visualización} &
+\textbf{Dimensiones, filtros y justificación}\\
+\midrule
+\endhead
+D2.1 & ¿Cómo cambian unidades, venta neta y margen durante la oferta? Unidades,
+venta neta, margen estimado y descuento. & Línea temporal por día o semana. &
+Fecha, producto y oferta; comparar con ventana base de duración equivalente.
+Facilita contrastar ventas antes, durante y después.\\
+D2.2 & ¿Qué oferta/producto rinde mejor? Unidades, venta neta, margen y
+descuento efectivo. & Tabla ordenable con indicadores destacados. & Producto,
+categoría, oferta, moneda y período. Presenta ingresos, margen y descuento
+en indicadores separados.\\
+D7.1 & ¿Qué materiales requieren revisión? Existencia total y brecha al
+umbral. & Tabla de excepciones con barras de estado. & Producto y umbral; las
+barras muestran existencias por ubicación y el indicador de brecha se calcula
+contra el total del producto. Facilita priorizar materiales.\\
+D7.2 & ¿Qué proveedor/precio acompaña el material? Precio ponderado,
+variación y participación de proveedor. & Línea de precio por período y
+proveedor, con tabla de cantidades recibidas/rechazadas. & Producto,
+proveedor y ventana. La tendencia y el volumen juntos dan contexto al precio.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\textbf{Ejemplos con filas de AdventureWorks.} Los siguientes registros
+ilustran el tipo de análisis que habilitan las vistas propuestas.
+
+\begin{itemize}
+  \item \textbf{D2: catálogo de oferta.} \texttt{SpecialOffer.csv} contiene
+  \emph{Mountain-100 Clearance Sale} (ID 7, 35\%), \emph{Road-650 Overstock}
+  (ID 9, 30\%) y \emph{Mountain Tire Sale} (ID 10, 50\%). Estos porcentajes
+  son descuentos nominales; el descuento realizado se mide en SOD.
+  \item \textbf{D2: línea base.} En SOD, la orden 43659, línea 1, registra el
+  producto 776, una unidad, precio 2024.9940, descuento 0.0000 y total neto
+  2024.9940. Este registro ejemplifica una venta regular para comparar con
+  períodos de oferta del mismo producto y moneda.
+  \item \textbf{D7: inventario por ubicación.} Product 317 (\emph{LL Crankarm})
+  tiene 283 unidades en Location 1, 158 en Location 5 y 152 en Location 50:
+  total 593. Su ReorderPoint es 375 y SafetyStockLevel es 500. La comparación
+  agregada sitúa la existencia por encima de ambos umbrales, con el detalle
+  por ubicación disponible para analizar la distribución.
+  \item \textbf{D7: compra.} La línea 8 de la orden de compra 7 corresponde al
+  producto 317: 550 unidades ordenadas y recibidas, ninguna rechazada, precio
+  unitario 27.0585 y total de línea 14882.1750. La fecha prevista registrada
+  es 13 de mayo de 2022.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=0.10cm,y=0.72cm]
+  \draw[-{Stealth},navy] (0,0) -- (65,0) node[right,font=\small]{descuento nominal (\%)};
+  \foreach \x in {0,10,...,60} {
+    \draw[gray!45] (\x,0) -- (\x,-0.12);
+    \node[below,font=\scriptsize] at (\x,-0.12) {\x};
+  }
+  \node[anchor=east,font=\small] at (-1,2.1) {Mountain-100 Clearance Sale};
+  \node[anchor=east,font=\small] at (-1,1.1) {Road-650 Overstock};
+  \node[anchor=east,font=\small] at (-1,0.1) {Mountain Tire Sale};
+  \fill[barone] (0,1.85) rectangle (35,2.35);
+  \fill[bartwo] (0,0.85) rectangle (30,1.35);
+  \fill[barthree] (0,-0.15) rectangle (50,0.35);
+  \node[anchor=west,font=\small] at (36,2.1) {35\%};
+  \node[anchor=west,font=\small] at (31,1.1) {30\%};
+  \node[anchor=west,font=\small] at (51,0.1) {50\%};
+\end{tikzpicture}
+\caption{Descuentos nominales registrados para tres ofertas en SpecialOffer.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=0.010cm,y=0.8cm]
+  \draw[-{Stealth},navy] (0,0) -- (690,0) node[right,font=\small]{unidades};
+  \foreach \x in {0,100,...,600} {
+    \draw[gray!45] (\x,0) -- (\x,-0.12);
+    \node[below,font=\scriptsize] at (\x,-0.12) {\x};
+  }
+  \fill[barone] (0,0.18) rectangle (283,0.68);
+  \fill[bartwo] (283,0.18) rectangle (441,0.68);
+  \fill[barthree] (441,0.18) rectangle (593,0.68);
+  \draw[very thick,red!70!black] (375,0.02) -- (375,1.15);
+  \draw[very thick,orange!75!black,dashed] (500,0.02) -- (500,1.85);
+  \node[font=\small,anchor=south] at (375,1.15) {Reorden: 375};
+  \node[font=\scriptsize,anchor=south] at (500,1.95) {Seguridad: 500};
+  \node[font=\scriptsize,white] at (141.5,0.43) {Loc. 1: 283};
+  \node[font=\scriptsize,white] at (362,0.43) {Loc. 5: 158};
+  \node[font=\scriptsize,black] at (517,0.43) {Loc. 50: 152};
+\end{tikzpicture}
+\caption{Existencia de ProductInventory agregada por las tres ubicaciones
+observadas para el producto 317 (593 unidades), junto con sus umbrales de
+reorden y seguridad.}
+\end{figure}
+
+\section{Fuentes operacionales y selección}
+
+\textbf{Resumen.} AdventureWorks OLTP es una base relacional que registra
+pedidos de venta, ofertas, productos, inventario, órdenes de compra y
+proveedores. Las tablas de Sales, Production y Purchasing aportan los datos
+operacionales para analizar D2 y D7.
+
+\textbf{Modelo conceptual de las fuentes (MERX).} Las relaciones muestran
+entidades y atributos que alimentan este subconjunto. Cada fila es una ruta
+independiente para evitar cruces visuales.
+
+\small
+\begin{longtable}{p{0.20\textwidth}p{0.30\textwidth}p{0.40\textwidth}}
+\toprule
+\textbf{Relación} & \textbf{Cardinalidad} & \textbf{Atributos relevantes}\\
+\midrule
+\endhead
+Customer -- SalesOrderHeader & Un cliente puede tener muchos pedidos (1:N). &
+CustomerID; PersonID/StoreID; SalesOrderID; OrderDate; TerritoryID.\\
+SalesOrderHeader -- SalesOrderDetail & Un pedido contiene muchas líneas (1:N). &
+SalesOrderID; SalesOrderDetailID; ProductID; SpecialOfferID; OrderQty;
+UnitPrice; UnitPriceDiscount; LineTotal.\\
+SpecialOffer -- SpecialOfferProduct -- Product & La relación oferta-producto
+es N:M, resuelta por entidad asociativa. & SpecialOfferID; ProductID;
+DiscountPct; fechas de vigencia.\\
+SalesOrderHeader -- CurrencyRate & Una tasa puede referenciarse desde muchos
+pedidos; la FK puede ser nula (1:N opcional). & CurrencyRateID; códigos From/To;
+AverageRate.\\
+SalesOrderHeader -- SalesTerritory & Un territorio puede corresponder a
+muchos pedidos; la FK puede ser nula (1:N opcional). & TerritoryID; nombre;
+país; grupo/región.\\
+ProductSubcategory -- ProductCategory -- Product & Una categoría agrupa
+subcategorías y estas productos (1:N). & IDs y nombres; MakeFlag;
+FinishedGoodsFlag; ReorderPoint; SafetyStockLevel.\\
+Product -- ProductCostHistory & Un producto puede tener varios costos
+estándar con períodos de vigencia (1:N). & ProductID; StandardCost; StartDate;
+EndDate.\\
+Product -- ProductInventory -- Location & El saldo se registra por producto,
+ubicación y bin. & ProductID; LocationID; Shelf; Bin; Quantity.\\
+Vendor -- PurchaseOrderHeader -- PurchaseOrderDetail -- Product & Un proveedor
+tiene órdenes con líneas de productos (1:N); cada línea identifica producto. &
+VendorID; PurchaseOrderID; OrderDate; Status; ProductID; OrderQty; UnitPrice;
+ReceivedQty; RejectedQty; StockedQty.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\textbf{Modelo lógico de las fuentes.} Las claves primarias y foráneas
+preservan estas rutas relacionales durante la extracción y la integración.
+
+\small
+\begin{longtable}{p{0.16\textwidth}p{0.78\textwidth}}
+\toprule
+\textbf{Proceso} & \textbf{Entidades, claves y relaciones}\\
+\midrule
+\endhead
+Ventas (D2) &
+SalesOrderHeader (PK SalesOrderID; FK CustomerID, TerritoryID,
+CurrencyRateID) se relaciona 1:N con SalesOrderDetail (PK SalesOrderID +
+SalesOrderDetailID; FK ProductID y SpecialOfferID + ProductID).
+Customer, SalesTerritory y CurrencyRate se enlazan mediante sus claves.
+SpecialOffer y Product se relacionan mediante SpecialOfferProduct.
+ProductCostHistory (PK ProductID + StartDate; FK ProductID) aporta StandardCost
+según la fecha de cada venta.\\
+Inventario (D7) &
+Product (PK ProductID) se relaciona 1:N con ProductInventory (PK ProductID +
+LocationID + Shelf + Bin), que se relaciona con Location mediante LocationID.
+ProductSubcategory enlaza Product con ProductCategory.\\
+Compras (D7) &
+PurchaseOrderHeader (PK PurchaseOrderID; FK VendorID) se relaciona 1:N con
+PurchaseOrderDetail (PK PurchaseOrderID + PurchaseOrderDetailID; FK ProductID).
+Vendor y Product se enlazan mediante VendorID y ProductID.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\textbf{Catálogo selectivo.} El catálogo identifica los atributos requeridos
+para los análisis y sus claves. PK = clave primaria; FK = clave foránea;
+NULL = atributo opcional.
+
+\small
+\begin{longtable}{p{0.24\textwidth}p{0.36\textwidth}p{0.15\textwidth}p{0.18\textwidth}}
+\toprule
+\textbf{Tabla y propósito} & \textbf{Atributos seleccionados (tipo; restricción)} &
+\textbf{Uso} & \textbf{Otros atributos}\\
+\midrule
+\endhead
+Sales.\allowbreak SalesOrderHeader: cabecera de venta. &
+SalesOrderID (int; PK): pedido; OrderDate (datetime): fecha; Status (tinyint):
+estado; CustomerID (int; FK): cliente; TerritoryID (int; FK, NULL): territorio
+de venta; OnlineOrderFlag (bit): canal; CurrencyRateID (int; FK, NULL): tasa
+asociada. & Fecha, estado realizado, cliente, territorio, canal y moneda del
+pedido (D2). & Direcciones, vendedor, impuestos y envío.\\
+Sales.\allowbreak SalesOrderDetail: línea de venta. &
+SalesOrderID (int; PK/FK): pedido; SalesOrderDetailID (int; PK): línea;
+ProductID (int; FK): producto; SpecialOfferID (int; FK compuesta): oferta;
+OrderQty (smallint): cantidad; UnitPrice (money): precio unitario;
+UnitPriceDiscount (money): descuento aplicado; LineTotal (money; calculado):
+importe neto. & Volumen, precio, descuento y venta neta por línea (D2). &
+Tracking, rowguid.\\
+Sales.\allowbreak SpecialOffer: términos de oferta. &
+SpecialOfferID (int; PK): oferta; Description (nvarchar(255)): nombre;
+DiscountPct (smallmoney): descuento nominal; Type, Category (nvarchar(50)):
+clasificación; StartDate, EndDate (datetime): vigencia; MinQty, MaxQty (int;
+MaxQty NULL): límites de cantidad. & Definición y vigencia de oferta (D2). &
+rowguid, ModifiedDate.\\
+Sales.\allowbreak SpecialOfferProduct: asociación de producto y oferta. &
+SpecialOfferID (int; PK/FK): oferta; ProductID (int; PK/FK): producto
+elegible. & Verificar la asociación válida producto-oferta (D2). &
+rowguid, ModifiedDate.\\
+Sales.\allowbreak CurrencyRate: tasas asociadas a pedidos. &
+CurrencyRateID (int; PK): tasa; CurrencyRateDate (datetime): fecha de tasa;
+FromCurrencyCode, ToCurrencyCode (nchar(3); FK): monedas origen/destino;
+AverageRate, EndOfDayRate (money): factores de conversión. & Identificar
+moneda y conversión (D2). & Aplicar AverageRate según la regla de conversión
+configurada.\\
+Sales.\allowbreak Customer: referencia del cliente. &
+CustomerID (int; PK): cliente; PersonID (int; FK, NULL): persona asociada;
+StoreID (int; FK, NULL): tienda asociada. & Distinguir persona/revendedor y
+contar clientes (D2). & Atributos personales de Person/Store.\\
+Sales.\allowbreak SalesTerritory: territorio de venta. &
+TerritoryID (int; PK): territorio; Name (nvarchar(50)): nombre;
+CountryRegionCode (nvarchar(3)): país; Group (nvarchar(50)): región de
+negocio. & Filtro geográfico de ventas (D2). & Atributos operacionales.\\
+Production.\allowbreak Product: catálogo operacional. &
+ProductID (int; PK): producto; Name (nvarchar(50)): nombre;
+ProductNumber (nvarchar(25)): código; MakeFlag, FinishedGoodsFlag (bit):
+fabricación/terminado; ProductSubcategoryID (int; FK, NULL): subcategoría;
+ReorderPoint, SafetyStockLevel (smallint): umbrales de inventario. &
+Identificación, selección y umbrales del producto (D2/D7). & Peso, talla,
+estilo y especificaciones técnicas.\\
+Production.\allowbreak ProductCostHistory: historial de costo estándar. &
+ProductID (int; PK/FK): producto; StartDate (datetime; PK): inicio de
+vigencia; EndDate (datetime, NULL): fin de vigencia; StandardCost (money):
+costo estándar. & Costo aplicable a la fecha del pedido para margen estimado
+(D2). & ModifiedDate.\\
+Production.\allowbreak ProductSubcategory: clasificación del producto. &
+ProductSubcategoryID (int; PK): subcategoría; Name (nvarchar(50)): nombre;
+ProductCategoryID (int; FK): categoría superior. & Jerarquía y selección de
+componentes (D2/D7). & ModifiedDate.\\
+Production.\allowbreak ProductCategory: categoría superior. &
+ProductCategoryID (int; PK): categoría; Name (nvarchar(50)): nombre. &
+Agrupar productos (D2/D7). & ModifiedDate.\\
+Production.\allowbreak ProductInventory: saldo por bin. &
+ProductID (int; PK/FK): producto; LocationID (smallint; PK/FK): ubicación;
+Shelf (nvarchar(10); PK): estante; Bin (tinyint; PK): contenedor;
+Quantity (smallint): unidades disponibles; ModifiedDate (datetime): última
+modificación. & Existencia actual por producto/ubicación y captura diaria
+DWH (D7). & rowguid.\\
+Production.\allowbreak Location: ubicación de inventario/producción. &
+LocationID (smallint; PK): ubicación; Name (nvarchar(50)): nombre. &
+Desglosar saldo por ubicación (D7). & CostRate, Availability.\\
+Purchasing.\allowbreak PurchaseOrderHeader: cabecera de compra. &
+PurchaseOrderID (int; PK): orden; OrderDate (datetime): fecha de orden;
+Status (smallint): estado; VendorID (int; FK): proveedor. & Período, estado y
+proveedor de compra (D7). & Fecha de envío, empleado, impuestos y otros datos
+de envío.\\
+Purchasing.\allowbreak PurchaseOrderDetail: línea de compra. &
+PurchaseOrderID, PurchaseOrderDetailID (int; PK): orden/línea; DueDate
+(datetime): fecha prevista; OrderQty (smallint): cantidad pedida; ProductID
+(int; FK): material; UnitPrice (money): precio unitario; LineTotal
+(numeric(19,4); calculado): importe de línea; ReceivedQty, RejectedQty
+(decimal(8,2)): recibidas/rechazadas; StockedQty (decimal(9,2)): ingresadas
+al almacén; ModifiedDate (datetime): última modificación. & Precio y
+cantidades de compra (D7). & rowguid.\\
+Purchasing.\allowbreak Vendor: proveedor. &
+BusinessEntityID (int; PK/FK): proveedor; Name (nvarchar(50)): nombre
+operativo. & Identificar proveedor en compras (D7). & Cuenta, calificación,
+preferencia, contactos y direcciones.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Diseño de arquitectura y Data Warehouse}
+
+\textbf{Resumen.} La arquitectura integra las fuentes operacionales,
+estandariza datos de ventas, compras e inventario y publica modelos
+dimensionales para consulta. El diseño combina almacenamiento por capas,
+transformación validada, orquestación y acceso analítico.
+
+\textbf{Diseño del almacén empresarial.} La capa empresarial conserva la
+trazabilidad de origen y organiza los dominios integrados con convenciones
+comunes. Las claves de origen se mantienen junto a claves sustitutas; fechas,
+estados y monedas conservan los valores de negocio para análisis coherente.
+
+\small
+\begin{longtable}{p{0.15\textwidth}p{0.35\textwidth}p{0.40\textwidth}}
+\toprule
+\textbf{Capa} & \textbf{Contenido} & \textbf{Convenciones de integración}\\
+\midrule
+\endhead
+Bronze & Copia de tablas Sales, Production y Purchasing. &
+Conservar columnas originales, sistema de origen, clave natural, fecha de
+extracción e identificador de lote.\\
+Silver & Entidades y procesos validados de ventas, productos, ofertas,
+clientes, territorios, compras, proveedores e inventario. &
+Aplicar tipos y dominios comunes, preservar estado original y moneda
+transaccional, y registrar rechazos con su causa.\\
+Gold & Hechos y dimensiones analíticos definidos en esta especificación. &
+Usar claves sustitutas con claves de origen para trazabilidad, dimensiones
+compartidas y reglas de moneda explícitas.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\textbf{Grano y dimensiones.} Se propone un esquema estrella en la capa Gold.
+Cada tabla de hechos conserva un proceso y una granularidad únicos. Las
+dimensiones de fecha y producto son compartidas. Las claves sustitutas son
+enteros; se conserva la clave natural OLTP para trazabilidad.
+
+\small
+\begin{longtable}{p{0.20\textwidth}p{0.29\textwidth}p{0.26\textwidth}p{0.17\textwidth}}
+\toprule
+\textbf{Tabla de hechos / grano} & \textbf{Dimensiones} &
+\textbf{Medidas principales} & \textbf{Decisión}\\
+\midrule
+\endhead
+FactSalesLine: una fila por SalesOrderID + SalesOrderDetailID. &
+DimDate, DimProduct, DimOffer, DimCustomer, DimTerritory. &
+OrderQty, UnitPrice, UnitPriceDiscount, GrossAmount, DiscountAmount,
+NetAmount, NetAmountUSD, StandardCostAtSale y GrossProfitUSD. & D2\\
+FactPurchaseLine: una fila por PurchaseOrderID + PurchaseOrderDetailID. &
+DimDate (roles OrderDate/DueDate), DimProduct, DimVendor. &
+OrderQty, UnitPrice, LineTotal, ReceivedQty, RejectedQty y StockedQty. & D7\\
+FactInventorySnapshot: una fila por fecha de captura + producto + ubicación;
+bins agregados. & DimDate, DimProduct, DimLocation. &
+QuantityOnHand, ReorderPointAtSnapshot y SafetyStockLevelAtSnapshot. & D7\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\textbf{Contenido de dimensiones.} DimDate contiene fecha, día, semana, mes,
+trimestre y año. DimProduct conserva ID, nombre/número, categoría,
+subcategoría, flags de fabricación/terminado y umbrales. DimOffer contiene
+ID, descripción, tipo/categoría, descuento
+nominal y vigencia. DimCustomer contiene ID y tipo persona/revendedor.
+DimTerritory contiene territorio, país y grupo.
+DimVendor contiene clave y nombre operativo. DimLocation contiene clave y
+nombre. Las jerarquías analíticas son año--trimestre--mes--día y
+categoría--subcategoría--producto; la ubicación se analiza por sus claves y
+nombres operacionales.
+
+\textbf{Modelo dimensional resumido.} Las dimensiones se conectan por clave
+foránea al hecho indicado; las relaciones son 1:N desde dimensión a hecho.
+
+\begin{center}
+\small
+\begin{tabular}{p{0.19\textwidth}p{0.24\textwidth}p{0.42\textwidth}}
+\toprule
+\textbf{Hecho} & \textbf{Proceso} & \textbf{Claves foráneas}\\
+\midrule
+FactSalesLine & D2: venta por artículo & DateKey, ProductKey, OfferKey,
+CustomerKey, TerritoryKey\\
+FactPurchaseLine & D7: pedido de material & OrderDateKey, DueDateKey,
+ProductKey, VendorKey\\
+FactInventorySnapshot & D7: saldo capturado & SnapshotDateKey, ProductKey,
+LocationKey\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Transformaciones y carga.}
+\begin{enumerate}
+  \item Extraer en modo lectura las columnas seleccionadas. Usar extracción
+  incremental de pedidos/líneas con claves naturales y marca de modificación;
+  reprocesar cambios para evitar duplicados. Capturar ProductInventory
+  diariamente de forma completa y consistente.
+  \item Conservar una copia de extracción con fecha de lote y recuentos.
+  Validar claves, cantidades, descuentos, asociaciones producto-oferta y
+  tasas de moneda. Registrar cada fila rechazada con su causa y mantener
+  visibles los recuentos de validación.
+  \item Generar claves sustitutas y resolver dimensiones antes de los hechos.
+  Normalizar fechas al calendario y preservar fecha de negocio. Conservar
+  moneda e importe originales, tasa aplicada y estado de conversión a USD.
+  \item Calcular en ventas:
+  \(\operatorname{GrossAmount}=\operatorname{OrderQty}\cdot\operatorname{UnitPrice}\),
+  \(\operatorname{DiscountAmount}=\operatorname{GrossAmount}\cdot\operatorname{UnitPriceDiscount}\) y
+  \(\operatorname{NetAmount}=\operatorname{LineTotal}\). Obtener StandardCost
+  de ProductCostHistory según la fecha de pedido, convertir el neto a USD y
+  calcular \(\operatorname{GrossProfitUSD}=\operatorname{NetAmountUSD}-
+  \operatorname{OrderQty}\cdot\operatorname{StandardCost}\). Conciliar el
+  neto con LineTotal. Para compras conservar cantidades fuente separadas;
+  para inventario sumar bins por producto/ubicación en cada captura diaria.
+  \item Publicar dimensiones y hechos en una transacción por lote. Registrar
+  fecha de corte, máximas fechas fuente, filas cargadas/rechazadas y
+  diferencias de conciliación. Generar alertas de ejecución y completitud
+  para cada lote y captura diaria.
+\end{enumerate}
+
+\textbf{Historia y reglas de interpretación.} FactInventorySnapshot construye
+historia diaria a partir de la primera captura de ProductInventory. Los
+umbrales de reorden y seguridad se calculan sobre la existencia total por
+producto y se presentan junto con el desglose por ubicación. Para D2, las
+ventas netas y los descuentos caracterizan el resultado comercial; el análisis
+de margen vincula el costo estándar vigente al período de venta. En compras,
+DueDate conserva la fecha prevista y ReceivedQty describe las unidades
+recibidas.
+
+\textbf{Componentes de arquitectura.}
+\small
+\begin{longtable}{p{0.20\textwidth}p{0.71\textwidth}}
+\toprule
+\textbf{Componente} & \textbf{Responsabilidad}\\
+\midrule
+\endhead
+SQL Server & Proporcionar las tablas operacionales de AdventureWorks.\\
+MinIO & Conservar extracciones de origen y datos de las capas del Lake.\\
+Spark y dbt & Validar, estandarizar y transformar datos hacia los modelos
+analíticos.\\
+Dagster & Programar cargas, administrar dependencias y registrar resultados
+de ejecución.\\
+PostgreSQL & Servir las tablas Gold de hechos y dimensiones.\\
+Trino & Consultar las estructuras publicadas para análisis y reportes.\\
+Usuarios analíticos & Explorar resultados mediante las visualizaciones
+asociadas a D2 y D7.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=0.45cm,scale=0.9,transform shape]
+  \node[box] (source) {SQL Server\\AdventureWorks};
+  \node[box,right=of source] (bronze) {MinIO\\extracción Bronze};
+  \node[box,right=of bronze] (curated) {Spark / dbt\\validación Silver/Gold};
+  \node[box,right=of curated] (gold) {PostgreSQL\\hechos y dimensiones};
+  \node[box,right=of gold] (query) {Trino\\consulta};
+  \node[box,right=of query] (users) {Usuarios\\analíticos};
+  \draw[flow] (source) -- (bronze);
+  \draw[flow] (bronze) -- (curated);
+  \draw[flow] (curated) -- (gold);
+  \draw[flow] (gold) -- (query);
+  \draw[flow] (query) -- (users);
+\end{tikzpicture}
+\caption{Flujo lógico de datos y acceso analítico. Dagster orquesta las cargas
+entre componentes.}
+\end{figure}
+
+\section{Fuentes de datos y parámetros de configuración}
+
+\begin{itemize}
+  \item Datos de ofertas:
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/SpecialOffer.csv}{\texttt{SpecialOffer.csv}}.
+  \item Datos de ventas:
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/SalesOrderDetail.csv}{\texttt{SalesOrderDetail.csv}}.
+  \item Datos de productos e inventario:
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/Product.csv}{\texttt{Product.csv}} y
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/ProductInventory.csv}{\texttt{ProductInventory.csv}}.
+  \item Historial de costos:
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/ProductCostHistory.csv}{\texttt{ProductCostHistory.csv}}.
+  \item Datos de compras:
+  \href{https://raw.githubusercontent.com/microsoft/sql-server-samples/master/samples/databases/adventure-works/oltp-install-script/PurchaseOrderDetail.csv}{\texttt{PurchaseOrderDetail.csv}}.
+\end{itemize}
+
+\textbf{Parámetros de análisis.} La configuración del modelo define moneda
+común y tasa de conversión para reportes consolidados; producto y oferta para
+el análisis D2; ventana de comparación para ventas; y categoría de materiales,
+umbral de inventario y ventana de compras para D7. Los tipos, claves y estados
+se corresponden con la estructura operativa de AdventureWorks.
+
+\end{document}

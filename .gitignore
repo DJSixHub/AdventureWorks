@@ -1,0 +1,5 @@
+aw-docs/*.aux
+aw-docs/*.log
+aw-docs/*.out
+aw-docs/*.toc
+aw-docs/*.synctex.gz
